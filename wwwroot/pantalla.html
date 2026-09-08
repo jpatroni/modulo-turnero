@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Turnero</title>
+    <link rel="stylesheet" href="pantalla.css" />
+</head>
+<body>
+
+    <div id="capaFondo"></div>
+    <img id="logo" alt="" />
+
+    <header class="cabecera"><div class="marca"><span class="marca-icono" aria-hidden="true">↗</span> Turnero</div><small>Atención al cliente</small></header>
+    <div id="marquesina">
+        <span id="marquesinaTexto">Cargando...</span>
+    </div>
+
+    <div id="centro">
+        <div id="panelPrincipal">
+            <p class="rotulo">Llamado actual</p><div id="aviso" role="status" aria-live="polite" aria-atomic="true">ESPERANDO</div><p class="ayuda">Acercate a la caja indicada cuando te llamemos.</p>
+        </div>
+        <aside class="historial" aria-label="Historial de llamados"><div id="videoPanel" hidden><video id="videoLateral" autoplay muted loop playsinline></video><p id="videoError" hidden>No se pudo reproducir el video.</p></div><h2>Últimos llamados</h2><div id="panelHistorial"></div></aside>
+    </div>
+
+    <footer class="pie"><div id="estado" role="status">Conectando...</div><button id="activarAudio" type="button">Activar sonido</button></footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+    <script>
+        const esVistaPrevia = new URLSearchParams(location.search).has("preview");
+        const aviso = document.getElementById("aviso");
+        const estado = document.getElementById("estado");
+        const marquesina = document.getElementById("marquesina");
+        const marquesinaTexto = document.getElementById("marquesinaTexto");
+        const panelHistorial = document.getElementById("panelHistorial");
+        const capaFondo = document.getElementById("capaFondo");
+        const logo = document.getElementById("logo");
+
+        // Cuantas llamadas anteriores se muestran en la columna derecha
+        const MAXIMO_HISTORIAL = 3;
+
+        // Configuracion vigente, traida del servidor
+        let config = { colorAviso: "#22c55e", colorTexto: "#ffffff", textoEspera: "ESPERANDO", segundosAviso: 8, sonidoActivo: false };
+
+        // Ultimas cajas llamadas, de la mas reciente a la mas antigua
+        let historial = [];
+
+        // Temporizador que devuelve la pantalla al estado de espera
+        let temporizadorReset = null;
+
+        // El navegador exige un gesto del usuario antes de permitir audio
+        let audioHabilitado = false;
+        let contextoAudio = null;
+
+        // Elemento de audio para el sonido personalizado
+        let audioPersonalizado = null;
+
+        const conexion = new signalR.HubConnectionBuilder()
+            .withUrl("/turneroHub")
+            .withAutomaticReconnect()
+            .build();
+
+        conexion.on("CajaLibre", (numeroCaja) => {
+            if (esVistaPrevia) return;
+            registrarEnHistorial(numeroCaja);
+            mostrarAviso(numeroCaja);
+            reproducirSonido();
+        });
+
+        // El panel de administracion avisa cuando se guardan cambios
+        conexion.on("ConfiguracionActualizada", () => {
+            if (esVistaPrevia) return;
+            cargarConfiguracion().catch(() => estado.textContent = "No se pudo actualizar la configuración");
+        });
+
+        conexion.onreconnecting(() => estado.textContent = "Reconectando…");
+        conexion.onreconnected(() => estado.textContent = "Conectado");
+        conexion.onclose(() => estado.textContent = "Sin conexión. Recargá la pantalla para reconectar.");
+        conexion.start()
+            .then(() => estado.textContent = "Conectado")
+            .catch(err => estado.textContent = "Error de conexion: " + err);
+
+        // Trae la configuracion del servidor y la aplica a la pantalla
+        async function cargarConfiguracion() {
+            const respuesta = await fetch("/api/configuracion");
+            if (!respuesta.ok) throw new Error("No se pudo cargar la configuración");
+            config = await respuesta.json();
+            aplicarConfiguracion();
+            if (esVistaPrevia) parent.postMessage({ tipo: "pantalla-lista" }, location.origin);
+        }
+
+        function aplicarConfiguracion() {
+            document.body.style.background = config.colorFondo;
+            document.body.style.color = config.colorTexto;
+            document.body.style.fontFamily = config.tipografia + ", Arial, sans-serif";
+
+            aviso.style.fontSize = config.tamanoAviso + "vw";
+            marquesinaTexto.style.fontSize = (config.tamanoMarquesina || 32) + "px";
+            marquesina.style.color = config.colorTextoMarquesina || "#ffffff";
+            document.documentElement.style.setProperty("--tamano-historial", (config.tamanoHistorial || 48) + "px");
+            aplicarVideo();
+            window.dispatchEvent(new Event("resize"));
+            marquesina.style.background = config.colorMarquesina;
+
+            // Los mensajes van separados para que se lean como una secuencia
+            const textos = config.mensajesMarquesina.join("   \u2022   ");
+            marquesinaTexto.textContent = textos;
+            marquesinaTexto.style.animationDuration = config.velocidadMarquesina + "s";
+
+            aplicarFondo();
+            aplicarLogo();
+            prepararSonido();
+
+            // Si no hay aviso activo, refresca el texto de espera
+            if (temporizadorReset === null) {
+                aviso.textContent = historial.length ? "CAJA " + historial[0] : config.textoEspera;
+                document.querySelector(".rotulo").textContent = historial.length ? "Última caja llamada" : "Esperando el primer llamado";
+                aviso.style.color = config.colorTexto;
+            }
+
+            dibujarHistorial();
+        }
+
+        // Muestra u oculta la imagen de fondo segun la configuracion
+        function aplicarVideo() {
+            const panel = document.getElementById("videoPanel");
+            const video = document.getElementById("videoLateral");
+            const activo = config.videoActivo && config.videoUrl;
+            panel.hidden = !activo;
+            document.body.classList.toggle("con-video", !!activo);
+            if (activo) {
+                if (video.getAttribute("src") !== config.videoUrl) {
+                    document.getElementById("videoError").hidden = true;
+                    video.src = config.videoUrl;
+                }
+                video.muted = true;
+                video.play().catch(() => { document.getElementById("videoError").hidden = false; });
+            } else {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+            }
+        }
+        document.getElementById("videoLateral").addEventListener("error", () => {
+            document.getElementById("videoError").hidden = false;
+        });
+        // La vista previa recibe borradores únicamente desde este mismo sitio.
+        if (new URLSearchParams(location.search).has("preview")) {
+            window.addEventListener("message", event => {
+                if (event.origin !== location.origin || event.source !== parent || event.data?.tipo !== "vista-previa") return;
+                config = event.data.configuracion;
+                aplicarConfiguracion();
+            });
+        }
+        function aplicarFondo() {
+            if (config.fondoActivo && config.fondoUrl) {
+                capaFondo.style.backgroundImage = "url('" + config.fondoUrl + "')";
+                capaFondo.style.opacity = config.fondoOpacidad / 100;
+                capaFondo.style.display = "block";
+            } else {
+                capaFondo.style.display = "none";
+            }
+        }
+
+        // Ubica el logo en la posicion y tamano configurados
+        function aplicarLogo() {
+            if (config.logoActivo && config.logoUrl) {
+                logo.src = config.logoUrl;
+                logo.style.width = config.logoTamano + "vw";
+                logo.style.left = config.logoPosicionX + "%";
+                logo.style.top = config.logoPosicionY + "%";
+                logo.style.display = "block";
+            } else {
+                logo.style.display = "none";
+            }
+        }
+
+        // Precarga el archivo de sonido para que suene sin demora
+        function prepararSonido() {
+            if (config.sonidoPersonalizado && config.sonidoUrl) {
+                audioPersonalizado = new Audio(config.sonidoUrl);
+                audioPersonalizado.load();
+            } else {
+                audioPersonalizado = null;
+            }
+        }
+
+        // Agrega la caja al principio del historial
+        function registrarEnHistorial(numeroCaja) {
+            historial.unshift(numeroCaja);
+
+            if (historial.length > MAXIMO_HISTORIAL + 1) {
+                historial.pop();
+            }
+
+            dibujarHistorial();
+        }
+
+        // Dibuja la columna derecha salteando la caja que ya se ve en grande
+        function dibujarHistorial() {
+            panelHistorial.innerHTML = "";
+
+            const anteriores = historial.slice(1, MAXIMO_HISTORIAL + 1);
+
+            if (!anteriores.length) {
+                const vacio = document.createElement("div");
+                vacio.className = "vacio";
+                vacio.textContent = "Los llamados anteriores aparecerán acá.";
+                panelHistorial.appendChild(vacio);
+            }
+            anteriores.forEach(numeroCaja => {
+                const fila = document.createElement("div");
+                fila.className = "item-historial";
+
+                const etiqueta = document.createElement("span");
+                etiqueta.className = "etiqueta";
+                etiqueta.textContent = "Caja";
+
+                const numero = document.createElement("span");
+                numero.className = "numero";
+                numero.textContent = numeroCaja;
+
+                fila.appendChild(etiqueta);
+                fila.appendChild(numero);
+                panelHistorial.appendChild(fila);
+            });
+        }
+
+        // Muestra el aviso y programa la vuelta al estado de espera
+        function mostrarAviso(numeroCaja) {
+            document.querySelector(".rotulo").textContent = "Llamado actual";
+            aviso.replaceChildren(document.createTextNode("AVANCE"), document.createElement("br"), document.createTextNode("CAJA " + numeroCaja));
+            aviso.style.color = config.colorAviso;
+
+            if (temporizadorReset !== null) {
+                clearTimeout(temporizadorReset);
+            }
+
+            temporizadorReset = setTimeout(() => {
+                aviso.textContent = historial.length ? "CAJA " + historial[0] : config.textoEspera;
+                document.querySelector(".rotulo").textContent = historial.length ? "Última caja llamada" : "Esperando el primer llamado";
+                aviso.style.color = config.colorTexto;
+                temporizadorReset = null;
+            }, config.segundosAviso * 1000);
+        }
+
+        // Elige entre el archivo subido y el tono generado
+        function reproducirSonido() {
+            if (!config.sonidoActivo) return;
+
+            if (audioPersonalizado) {
+                // currentTime en cero permite repetirlo aunque siga sonando
+                audioPersonalizado.currentTime = 0;
+                audioPersonalizado.play().catch(() => reproducirTono());
+                return;
+            }
+
+            reproducirTono();
+        }
+
+        // Genera un tono de dos notas usando la Web Audio API,
+        // asi no hace falta ningun archivo de sonido externo
+        function reproducirTono() {
+            if (!audioHabilitado) return;
+
+            const ahora = contextoAudio.currentTime;
+            tocarNota(880, ahora, 0.15);
+            tocarNota(1320, ahora + 0.18, 0.25);
+        }
+
+        function tocarNota(frecuencia, momento, duracion) {
+            const oscilador = contextoAudio.createOscillator();
+            const volumen = contextoAudio.createGain();
+
+            oscilador.type = "sine";
+            oscilador.frequency.value = frecuencia;
+
+            // Envolvente suave para que no suene como un chasquido
+            volumen.gain.setValueAtTime(0, momento);
+            volumen.gain.linearRampToValueAtTime(0.3, momento + 0.02);
+            volumen.gain.linearRampToValueAtTime(0, momento + duracion);
+
+            oscilador.connect(volumen);
+            volumen.connect(contextoAudio.destination);
+
+            oscilador.start(momento);
+            oscilador.stop(momento + duracion);
+        }
+
+        // Recupera el audio con cualquier gesto y permite probarlo desde el botón.
+        async function habilitarAudio(evento) {
+            const boton = document.getElementById("activarAudio");
+            const probar = evento?.target === boton;
+            if (audioHabilitado && contextoAudio?.state === "running" && !probar) return;
+
+            try {
+                contextoAudio ??= new (window.AudioContext || window.webkitAudioContext)();
+                if (contextoAudio.state !== "running") await contextoAudio.resume();
+                audioHabilitado = contextoAudio.state === "running";
+                if (!audioHabilitado) throw new Error("Audio suspendido");
+                boton.textContent = "Probar sonido";
+                if (probar) {
+                    const ahora = contextoAudio.currentTime;
+                    tocarNota(880, ahora, 0.15);
+                    tocarNota(1320, ahora + 0.18, 0.25);
+                }
+            } catch {
+                audioHabilitado = false;
+                boton.textContent = "Reintentar activar sonido";
+            }
+        }
+
+        document.addEventListener("click", habilitarAudio);
+        document.addEventListener("keydown", habilitarAudio);
+        
+
+        async function restaurarLlamados() {
+            if (esVistaPrevia) return;
+            const respuesta = await fetch("/api/pulso/recientes", { cache: "no-store" });
+            if (!respuesta.ok) return;
+            const anteriores = await respuesta.json();
+            // No pisar un llamado recibido por SignalR mientras se consultaba el historial.
+            if (!historial.length && Array.isArray(anteriores)) {
+                historial = anteriores.slice(0, MAXIMO_HISTORIAL + 1);
+                aplicarConfiguracion();
+            }
+        }
+        // Carga inicial
+        dibujarHistorial();
+        cargarConfiguracion().then(() => restaurarLlamados().catch(() => {})).catch(() => estado.textContent = "No se pudo cargar la configuración. Recargá la pantalla.");
+    </script>
+    <script src="ajustar-aviso.js"></script>
+</body>
+</html>
+
+
+
+
+
+

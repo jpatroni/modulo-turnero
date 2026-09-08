@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Turnero": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:54574;http://0.0.0.0:5000"
+    }
+  }
+}

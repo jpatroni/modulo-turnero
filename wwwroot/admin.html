@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Administración · Turnero</title><link rel="stylesheet" href="admin.css"></head>
+<body>
+<section id="login" class="login-shell">
+ <div class="login-intro"><a class="brand" href="/">↗ Turnero</a><p class="eyebrow">TU PANTALLA, A TU MEDIDA</p><h1>Una mejor<br>forma de esperar.</h1><p>Personalizá los llamados, compartí promociones y dale tu identidad a cada pantalla.</p><div class="sample"><span>LLAMADO ACTUAL</span><strong>CAJA 1 ↗</strong><small>Una experiencia clara. En tiempo real.</small></div></div>
+ <form id="loginForm" class="login-card"><span class="eyebrow">ADMINISTRACIÓN</span><h2>Bienvenido de nuevo</h2><p>Ingresá para administrar tu turnero.</p><label>Usuario<input name="usuario" autocomplete="username" required value="admin"></label><label>Contraseña<input name="clave" type="password" autocomplete="current-password" required></label><p id="loginError" role="alert"></p><button class="primary" type="submit">Ingresar al panel →</button><p class="login-help">Ingresá, configurá tu turnero y elegí «Mostrar pantalla» para comenzar.</p></form>
+</section>
+<div id="app" hidden>
+ <aside class="sidebar"><a href="/" class="brand">↗ Turnero</a><span class="eyebrow">ADMINISTRACIÓN</span><nav><a href="#apariencia">Aa &nbsp; Apariencia</a><a href="#banner">▤ &nbsp; Banner y mensajes</a><a href="#multimedia">▷ &nbsp; Multimedia</a><a href="#sonido">♫ &nbsp; Sonido</a><a href="#datos">▥ &nbsp; Datos</a></nav><div class="sidebar-bottom"><a href="/pantalla.html" target="_blank" rel="noopener" data-mostrar-pantalla>Mostrar pantalla ↗</a><button id="logout" type="button">Cerrar sesión</button></div></aside>
+ <main><header class="page-header"><div><p class="eyebrow">CONFIGURACIÓN DE PANTALLA</p><h1>Hacé que se vea como vos.</h1><p>Todos los detalles de tu turnero, en un solo lugar.</p></div><div class="header-actions"><button class="primary" type="submit" form="configForm" id="save">Guardar cambios</button><a class="show-screen" href="/pantalla.html" target="_blank" rel="noopener" data-mostrar-pantalla>Mostrar pantalla ↗</a></div></header>
+ <p id="status" class="status" role="status" aria-live="polite"></p>
+ <div class="workspace"><form id="configForm"><section class="card" id="apariencia"><div class="section-title"><span class="section-icon">Aa</span><div><h2>Apariencia</h2><p>Texto legible y una identidad consistente.</p></div></div><div id="appearanceFields" class="fields"></div></section>
+ <section class="card" id="banner"><div class="section-title"><span class="section-icon">▤</span><div><h2>Banner y mensajes</h2><p>Promociones y novedades en la franja superior.</p></div></div><label>Mensajes del banner<textarea id="mensajesMarquesina" rows="4" required maxlength="4000" placeholder="Un mensaje por línea"></textarea><small>Un mensaje por línea. Hasta 20 mensajes.</small></label><div id="bannerFields" class="fields"></div></section>
+ <section class="card" id="multimedia"><div class="section-title"><span class="section-icon">▷</span><div><h2>Fondos y multimedia</h2><p>Dale vida a la pantalla con tu propio contenido.</p></div></div><div id="mediaFields"></div></section>
+ <section class="card" id="sonido"><div class="section-title"><span class="section-icon">♫</span><div><h2>Sonido de llamados</h2><p>Una señal clara para acompañar cada llamado.</p></div></div><div id="soundFields"></div></section></form>
+ <aside class="preview-column"><div class="preview-card"><div class="preview-heading"><span class="eyebrow">VISTA PREVIA</span><span class="badge">Borrador</span></div><div class="preview-frame"><iframe id="preview" title="Vista previa de la pantalla" src="/pantalla.html?preview=1" tabindex="-1"></iframe></div><h3>Así se verá tu pantalla</h3><p>La vista previa refleja tus cambios. Presioná <strong>Guardar cambios</strong> para aplicarlos a las pantallas conectadas.</p><a href="/pantalla.html" target="_blank" rel="noopener" data-mostrar-pantalla>Mostrar pantalla ↗</a></div><div class="hint"><strong>El llamado siempre primero</strong><p>Los videos se reproducen en el lateral, en bucle y sin audio. El sonido queda reservado para los llamados.</p></div></aside></div>
+ <section class="card data-section" id="datos">
+  <div class="section-title"><span class="section-icon">▥</span><div><h2>Datos de llamados</h2><p>Frecuencias por caja y horario · Hora de Argentina (UTC−3)</p></div></div>
+  <div class="data-toolbar"><label>Período<select id="datosPeriodo"><option value="1">Hoy</option><option value="7" selected>Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option></select></label><button id="datosActualizar" class="show-screen" type="button">Actualizar datos</button><a id="datosExportar" href="/api/datos/registros?dias=7" download>Descargar registros JSON ↓</a></div>
+  <p id="datosEstado" role="status" class="status"></p>
+  <div class="data-metrics"><div><small>Llamados registrados</small><strong id="datosTotal">—</strong></div><div><small>Cajas con llamados</small><strong id="datosCajas">—</strong></div><div><small>Hora con más llamados</small><strong id="datosPico">—</strong></div></div>
+  <p id="datosVacio" hidden>Todavía no hay llamados en este período. Los datos se registran desde la incorporación de este módulo.</p>
+  <div class="data-grid"><div><h3>Por caja</h3><div class="data-table-wrap"><table><thead><tr><th>Caja</th><th>Llamados</th><th>Intervalo medio</th></tr></thead><tbody id="datosPorCaja"></tbody></table></div><small>Intervalos entre pulsos de la misma caja dentro del mismo día. Incluyen pausas; no son tiempos de espera ni de atención.</small><h3 class="data-subtitle">Por día de la semana</h3><div id="datosPorDia"></div></div><div><h3>Llamados por hora</h3><p class="data-note">Totales acumulados en el período seleccionado.</p><div id="datosPorHora" class="hour-bars"></div></div></div>
+  <h3 class="data-subtitle">Últimos registros</h3><div class="data-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Caja anunciada</th><th>Identificador de origen</th></tr></thead><tbody id="datosRecientes"></tbody></table></div>
+  <p class="data-note">Cada pulso recibido cuenta como un llamado, también si se repite. Estos datos describen actividad observada; todavía no se calculan predicciones.</p>
+ </section>
+ </main>
+</div><script src="admin.js"></script><script src="datos.js"></script>
+</body></html>
+
+
